@@ -1,21 +1,34 @@
 -module(erlisp).
 -compile(export_all).
 
+classify(32) ->
+    whitespace;
+classify($\t) ->
+    whitespace;
+classify($\n) ->
+    eol;
+classify(_) ->
+    character.
+
 lexer(Receiver, Input, Accumulator) ->
     receive
 	next_token_plz ->
 	    [Ch|Rest] = Input,
-	    case Ch of
-		32 ->
-		    Receiver ! {can_haz_token, whitespace};
-		$\t ->
-		    Receiver ! {can_haz_token, whitespace};
-		$\n ->
-		    Receiver ! {can_haz_token, eol};
-		_ ->
-		    Receiver ! {can_haz_token, token, Ch}
-	    end,
-	    lexer(Receiver, Rest, Accumulator);
+	    case classify(Ch) of
+		character ->
+		    Acc = [ Ch | Accumulator ],
+		    case classify(hd(Rest)) of
+			character ->
+			    self() ! next_token_plz,
+			    lexer(Receiver, Rest, Acc);
+			_ ->
+			    Receiver ! {can_haz_token, token, lists:reverse(Acc)},
+			    lexer(Receiver, Rest, [])
+		    end;
+		Token ->
+		    Receiver ! {can_haz_token, Token},
+		    lexer(Receiver, Rest, Accumulator)
+	    end;
 	kthxbye ->
 	    okay
     end.
@@ -38,8 +51,8 @@ builder(Input, Lexer, Receiver) ->
 	    Receiver ! {evaluate_plz, {eol}},
 	    self() ! kthxbye,
 	    builder(Input, Lexer, Receiver);
-	{can_haz_token, token, Ch} ->
-	    Receiver ! {evaluate_plz, {symbol, Ch}},
+	{can_haz_token, token, Symbol} ->
+	    Receiver ! {evaluate_plz, {symbol, Symbol}},
 	    builder(Input, Lexer, Receiver);
 	kthxbye ->
 	    Lexer ! kthxbye,
@@ -54,7 +67,7 @@ evaluator(Builder) ->
     Builder ! expression_plz,
     receive
 	{evaluate_plz, {symbol, X}} ->
-	    io:format("Would evaluate ~s~n", [[X]]),
+	    io:format("Would evaluate ~s~n", [X]),
 	    evaluator(Builder);
 	{evaluate_plz, {eol}} ->
 	    self() ! kthxbye,
