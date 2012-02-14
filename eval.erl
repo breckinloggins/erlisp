@@ -48,9 +48,11 @@ replace(L,{S,D}) when is_list(L) ->
 
 %% Note that we do some special forms in evaluate.  This is because control-flow-like constructs
 %% (quote, if, ...) can't be functions
-%% TODO: cond is more primitive than ifm.  Ifm can be a macro
 
+%% t always evaluates to itself
+evaluate(t, Env) -> {t, Env};
 
+%% Evaluate primitives, including atom environment lookup
 evaluate(X, Env) when is_float(X) -> {X, Env};
 evaluate(X, Env) when is_integer(X) -> {X, Env};
 evaluate(X, Env) when is_atom(X) ->
@@ -62,8 +64,14 @@ evaluate(X, Env) when is_atom(X) ->
 	    end;
 	F -> {F, Env}
     end;
+
+%% The empty list always evaluates to itself
 evaluate([], Env) -> {[], Env};
+
+%% Quote the given arguments unevaluated
 evaluate([quote|T], Env) -> [R] = T, {R, Env};
+
+%% Return t if the argument is an atom or the empty list, [] otherwise
 evaluate([atom|[[]]], Env) -> {t, Env};
 evaluate([atom|T], Env) ->
     [R] = T,
@@ -71,11 +79,26 @@ evaluate([atom|T], Env) ->
 	true -> {[], Env};
 	false -> {t, Env}
     end;
+
+%% Return t if two atoms are the same or if the empty list is compared to itself, [] otherwise
 evaluate([eq,A,A], Env) when not is_list(A) -> {t, Env};
 evaluate([eq,[],[]], Env) -> {t, Env};
 evaluate([eq|_], Env) -> {[], Env};
+
+%% Concatenate the evaluated Head to the evaluated Tail.  Returned value may be a proper or
+%% improper list
+evaluate([cons,H,T], Env) -> 
+    {EvalH, _} = evaluate(H, Env),
+    {EvalT, _} = evaluate(T, Env),
+    {[EvalH|EvalT], Env};
+
+%% Encode lambda expressions
 evaluate([lambda,Args,Def], Env) -> {{lambda,Args,Def}, Env};
+
+%% Debug special form to print out the environment
 evaluate([env], Env) -> io:format("~p~n", [Env]), {t, Env};
+
+%% Set the given atom to the result of the expression in the current environment
 evaluate([set,Atom,Expr], Env) ->
     case is_atom(Atom) of
 	false -> erlang:error("Argument to set must be an atom");
@@ -83,21 +106,35 @@ evaluate([set,Atom,Expr], Env) ->
 	    {ExprResult, _} = evaluate(Expr, Env),
 	    {t, env_insert(Env, Atom, ExprResult)}
     end;
+
+%% Define a function with the given name, args, and definition
 evaluate([defun,Name,Args,Def], Env) ->
     case is_atom(Name) of
 	false -> erlang:error("Function name in defun must be an atom");
 	true -> evaluate([set,Name,[lambda,Args,Def]], Env)
     end;
-evaluate([ifm,Test,If,Else], Env) ->
-    case evaluate(Test, Env) of
-	{t, NewEnv} -> evaluate(If, NewEnv);
-	{[], NewEnv} -> evaluate(Else, NewEnv)
+
+%% For each (p_i e_i), evaluate p_i, if it returns t, evaluate e_i, else continue
+%% to (p_i+1, e_i+1) or return [] if no more pairs
+evaluate(['cond'], Env) -> {[], Env};
+evaluate(['cond',Term], _) when is_atom(Term) ->
+    erlang:error(string:concat("COND clause is not a list: ", atom_to_list(Term)));
+evaluate(['cond',[t]], Env) -> {t, Env};
+evaluate(['cond',[]], Env) -> {[], Env};
+evaluate(['cond',[P,E]], Env) ->
+    case evaluate(P, Env) of
+	{t, _} -> evaluate(E, Env);
+	_ -> {[], Env}
     end;
-evaluate([ifm,Test,If], Env) ->
-    case evaluate(Test, Env) of
-	{t, NewEnv} -> evaluate(If, NewEnv);
-	{[], NewEnv} -> {[], NewEnv}
-    end;
+evaluate(['cond',[P,E]|XS], Env) ->
+    io:format("Matched it! ~p~n", [XS]),
+    case evaluate(P, Env) of
+	{t, _} -> evaluate(E, Env);
+	_ -> evaluate(['cond'|XS], Env)
+    end;	
+
+%% Evaluate functional application of the form (f p1 p2 ... pn).  f can be an atom
+%% that resolves to a function or a lambda expression, or a bare lambda expression itself
 evaluate([X|Args], Env) ->
     case evaluate(X, Env) of
 	{{lambda,Params,Def}, NewEnv} ->
@@ -112,6 +149,8 @@ evaluate([X|Args], Env) ->
 	    Result = erlang:apply(F, NoEnvArgs),
 	    {Result, NewEnv}
     end;
+
+%% Catch unrecognized constructions
 evaluate(_,_) ->
     erlang:error("Unknown expression type").
 
