@@ -37,10 +37,10 @@ sanitize(X) when is_list(X), is_list(hd(X)) ->
 sanitize(X) ->
     F = string:to_float(X),
     case F of
-	{error, no_float} ->
+	{error, _} ->
 	    I = string:to_integer(X),
 	    case I of
-		{error, no_integer} ->
+		{error, _} ->
 		    list_to_atom(X);
 		_ -> {IRet, _} = I,
 		     IRet
@@ -49,23 +49,23 @@ sanitize(X) ->
 	     FRet
     end.
 
-evalloop([]) -> done;
-evalloop(L) when is_list(L) ->
+evalloop([], Env) -> Env;
+evalloop(L, Env) when is_list(L) ->
     [Expr|Rest] = L,
     case Expr of
-	[] -> done;
+	[] -> Env;
 	_ ->
 	    Sanitized = lists:map(fun sanitize/1, Expr),
-	    eval:evaluate(Sanitized),
-	    evalloop(Rest)
+	    {_, NewEnv} = eval:evaluate(Sanitized, Env),
+	    evalloop(Rest, NewEnv)
     end.
 
-readloop() ->
+readloop(Env) ->
     Exprs = read(),
-    evalloop(Exprs),
-    readloop().
+    NewEnv = evalloop(Exprs, Env),
+    readloop(NewEnv).
 
 repl() ->
     io:format("Take this REPL, brother; may it serve you well.~n"),
-    readloop().
+    readloop(eval:env()).
     
