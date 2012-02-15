@@ -4,7 +4,24 @@
 
 dbg(Msg) -> io:format("~s~n", [Msg]).
 
-read() -> read(io:get_line("> ")).
+count_parens([]) -> 0;
+count_parens([$(|Rest]) -> count_parens(Rest) + 1;
+count_parens([$)|Rest]) -> count_parens(Rest) - 1;
+count_parens([_|Rest]) -> count_parens(Rest).
+
+getline_balanced(Prompt, Acc) ->
+    Total = Acc ++ io:get_line(Prompt),
+    Parens = count_parens(Total),
+    if Parens > 0 -> getline_balanced(Prompt ++ "   ", Total);
+       Parens < 0 -> erlang:error("Too many closing parentheses");
+       Parens =:= 0 -> lists:map(fun(C) ->
+					 case C of
+					     $\n -> $ ;
+					     _ -> C
+					 end end, Total)
+    end.
+ 
+read() -> read(getline_balanced("> ", "")).
 
 read(S) -> read(hd(string:tokens(S,"\r\n")), "", []).
 

@@ -98,6 +98,8 @@ evaluate([lambda,Args,Def], Env) -> {{lambda,Args,Def}, Env};
 %% Debug special form to print out the environment
 evaluate([env], Env) -> io:format("~p~n", [Env]), {t, Env};
 
+%% Performs a series of expressions in order (primarily for their side effects)
+%% The return value is the value of the last expression
 evaluate([do], Env) -> {[], Env};
 evaluate([do,Expr|Exprs], Env) ->
     {Result, NewEnv} = evaluate(Expr, Env),
