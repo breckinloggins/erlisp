@@ -2,8 +2,6 @@
 -import(eval).
 -export([read/0,read/1,repl/0]).
 
-dbg(Msg) -> io:format("~s~n", [Msg]).
-
 count_parens([]) -> 0;
 count_parens([$(|Rest]) -> count_parens(Rest) + 1;
 count_parens([$)|Rest]) -> count_parens(Rest) - 1;
