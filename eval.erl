@@ -98,6 +98,14 @@ evaluate([lambda,Args,Def], Env) -> {{lambda,Args,Def}, Env};
 %% Debug special form to print out the environment
 evaluate([env], Env) -> io:format("~p~n", [Env]), {t, Env};
 
+evaluate([do], Env) -> {[], Env};
+evaluate([do,Expr|Exprs], Env) ->
+    {Result, NewEnv} = evaluate(Expr, Env),
+    case Exprs of
+	[] -> {Result, NewEnv};
+	_ -> evaluate([do|Exprs], NewEnv)
+    end;
+
 %% Set the given atom to the result of the expression in the current environment
 evaluate([set,Atom,Expr], Env) ->
     case is_atom(Atom) of
@@ -137,17 +145,21 @@ evaluate(['cond',[P,E]|XS], Env) ->
 %% that resolves to a function or a lambda expression, or a bare lambda expression itself
 evaluate([X|Args], Env) ->
     case evaluate(X, Env) of
-	{{lambda,Params,Def}, NewEnv} ->
-	    EvaledArgs = lists:map(fun(Arg) -> evaluate(Arg, NewEnv) end, Args),
+	{{lambda,Params,Def}, Env} ->
+	    EvaledArgs = lists:map(fun(Arg) -> evaluate(Arg, Env) end, Args),
 	    NoEnvArgs = lists:map(fun({A,_}) -> A end, EvaledArgs),
-	    Replacements = lists:zip(Params, NoEnvArgs),
+	    Replacements = case NoEnvArgs of
+			       [] -> [];
+			       _ -> lists:zip(Params, NoEnvArgs)
+			   end,
 	    ToEval = replace(Def, Replacements),
-	    evaluate(ToEval, NewEnv);
-	{F, NewEnv} -> 
-	    EvaledArgs = lists:map(fun(Arg) -> evaluate(Arg, NewEnv) end, Args),
+	    {Result, _} = evaluate(ToEval, env(Env)),
+	    {Result, Env};
+	{F, Env} -> 
+	    EvaledArgs = lists:map(fun(Arg) -> evaluate(Arg, Env) end, Args),
 	    NoEnvArgs = lists:map(fun({A,_}) -> A end, EvaledArgs),
 	    Result = erlang:apply(F, NoEnvArgs),
-	    {Result, NewEnv}
+	    {Result, Env}
     end;
 
 %% Catch unrecognized constructions
